@@ -1,6 +1,8 @@
 package io.github.mdmac1983.leancleaner.core
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
 import io.github.mdmac1983.leancleaner.dupes.KeepStrategy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,10 +58,10 @@ class Prefs(context: Context) {
     private inline fun <T> update(
         flow: MutableStateFlow<T>,
         value: T,
-        crossinline write: android.content.SharedPreferences.Editor.(T) -> Unit,
+        crossinline write: SharedPreferences.Editor.(T) -> Unit,
     ) {
         flow.value = value
-        sp.edit().apply { write(value) }.apply()
+        sp.edit { write(value) }
     }
 
     private companion object {
