@@ -195,7 +195,7 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
                                 "It's only read on your phone.",
                             modifier = Modifier.padding(16.dp),
                             action = {
-                                FilledTonalButton(onClick = {
+                                Button(onClick = {
                                     context.startActivitySafely(
                                         Permissions.usageAccessIntent(context),
                                         fallback = Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS),
@@ -206,8 +206,9 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
                     }
                 }
                 item(key = "count") {
+                    val sized = apps.mapNotNull { it.totalBytes }
                     Text(
-                        "${Format.count(apps.size, "app")} · ${Format.size(apps.sumOf { it.totalBytes ?: 0L })}",
+                        Format.count(apps.size, "app") + if (sized.isNotEmpty()) " · ${Format.size(sized.sum())}" else "",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

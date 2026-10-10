@@ -213,7 +213,7 @@ private fun Overview(result: AnalyzerResult, volumes: List<Volume>, bottom: Padd
                     StackedBar(segments)
                     Spacer(Modifier.height(12.dp))
                     kinds.forEach { (kind, bytes) ->
-                        LegendRow(KIND_COLORS.getValue(kind), kind.label, "${result.countByKind[kind] ?: 0} files", bytes, used)
+                        LegendRow(KIND_COLORS.getValue(kind), kind.label, Format.count(result.countByKind[kind] ?: 0, "file"), bytes, used)
                     }
                     if (systemBytes > 0) LegendRow(SYSTEM_COLOR, "Apps, system & other", null, systemBytes, used)
                 }

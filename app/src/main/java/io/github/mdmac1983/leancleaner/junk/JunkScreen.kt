@@ -23,7 +23,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -168,7 +168,7 @@ private fun JunkResults(items: List<JunkItem>, selected: Set<String>, vm: JunkVi
                         "${Format.size(it)} across all apps. Android can clear every app's cache in one go; apps rebuild them as needed."
                     } ?: "Android can clear every app's cache in one go. Allow usage access in Settings to see how much that frees.",
                     action = {
-                        FilledTonalButton(onClick = {
+                        Button(onClick = {
                             try {
                                 clearCaches.launch(SystemCacheCleaner.intent())
                             } catch (_: ActivityNotFoundException) {

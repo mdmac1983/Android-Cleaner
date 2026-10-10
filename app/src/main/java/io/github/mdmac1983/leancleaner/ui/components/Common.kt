@@ -337,9 +337,11 @@ fun FileKind.icon(): ImageVector = when (this) {
 
 /** Shared storage paths shown relative to their volume: "DCIM/Camera" or "SD card/Music". */
 fun prettyPath(path: String): String {
-    val internal = "/storage/emulated/0"
-    if (path == internal) return "Internal storage"
-    if (path.startsWith("$internal/")) return path.removePrefix("$internal/")
+    // Internal storage of the current user: /storage/emulated/0, or /storage/emulated/10 etc. for other profiles.
+    INTERNAL_ROOT.find(path)?.let { internal ->
+        val rest = path.removePrefix(internal.value).trimStart('/')
+        return rest.ifEmpty { "Internal storage" }
+    }
     val sd = SD_ROOT.find(path) ?: return path
     val rest = path.removePrefix(sd.value).trimStart('/')
     return if (rest.isEmpty()) "SD card" else "SD card/$rest"
@@ -348,4 +350,5 @@ fun prettyPath(path: String): String {
 /** Parent folder of [path] in [prettyPath] form. */
 fun prettyParent(path: String): String = prettyPath(path.substringBeforeLast('/'))
 
-private val SD_ROOT = Regex("^/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}")
+private val INTERNAL_ROOT = Regex("^/storage/emulated/\\d+(?=/|$)")
+private val SD_ROOT = Regex("^/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}(?=/|$)")

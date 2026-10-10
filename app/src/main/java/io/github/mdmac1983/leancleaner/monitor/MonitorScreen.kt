@@ -63,7 +63,9 @@ fun MonitorScreen(onBack: () -> Unit) {
     }
 
     ToolScaffold(title = "System monitor", onBack = onBack) { padding ->
-        val s = stats
+        // The first reading takes milliseconds. Building the list only once it's there keeps the list
+        // anchored at the top (inserting cards above an already visible one would scroll past them).
+        val s = stats ?: return@ToolScaffold
         LazyColumn(
             contentPadding = PaddingValues(
                 start = 16.dp,
@@ -73,23 +75,21 @@ fun MonitorScreen(onBack: () -> Unit) {
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (s != null) {
-                item(key = "cpu") { CpuCard(s.cpu, s.thermal) }
-                item(key = "memory") { MemoryCard(s.memory) }
-                s.battery?.let { battery -> item(key = "battery") { BatteryCard(battery) } }
-                item(key = "storage") {
-                    StatCard("Storage", AppIcons.SdStorage) {
-                        s.volumes.forEach { v ->
-                            Text(v.label, style = MaterialTheme.typography.bodyMedium)
-                            Spacer(Modifier.height(4.dp))
-                            UsageBar(if (v.totalBytes > 0) v.usedBytes.toFloat() / v.totalBytes else 0f)
-                            Text(
-                                "${Format.size(v.usedBytes)} used · ${Format.size(v.freeBytes)} free of ${Format.size(v.totalBytes)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-                            )
-                        }
+            item(key = "cpu") { CpuCard(s.cpu, s.thermal) }
+            item(key = "memory") { MemoryCard(s.memory) }
+            s.battery?.let { battery -> item(key = "battery") { BatteryCard(battery) } }
+            item(key = "storage") {
+                StatCard("Storage", AppIcons.SdStorage) {
+                    s.volumes.forEach { v ->
+                        Text(v.label, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(4.dp))
+                        UsageBar(if (v.totalBytes > 0) v.usedBytes.toFloat() / v.totalBytes else 0f)
+                        Text(
+                            "${Format.size(v.usedBytes)} used · ${Format.size(v.freeBytes)} free of ${Format.size(v.totalBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                        )
                     }
                 }
             }
@@ -102,7 +102,7 @@ fun MonitorScreen(onBack: () -> Unit) {
                     InfoRow("ABIs", device.abis)
                     InfoRow("Kernel", device.kernel)
                     InfoRow("Display", device.display)
-                    s?.let { InfoRow("Uptime", Format.duration(it.uptime)) }
+                    InfoRow("Uptime", Format.duration(s.uptime))
                 }
             }
         }

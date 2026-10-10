@@ -124,7 +124,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             FilterChip(
                                 selected = threshold == bytes,
                                 onClick = { prefs.setLargeFileThreshold(bytes) },
-                                label = { Text(Format.size(bytes)) },
+                                label = { Text("${bytes / 1_000_000} MB") },
                             )
                         }
                     }

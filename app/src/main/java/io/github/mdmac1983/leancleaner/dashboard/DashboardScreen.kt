@@ -93,7 +93,7 @@ fun DashboardScreen(onOpen: (Route) -> Unit, onQuickClean: () -> Unit) {
             item(key = "hero") { StorageHero(overview?.volumes?.firstOrNull(), onQuickClean) }
             item(key = "stats") {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val memory = overview?.memory
+                    val memory = overview?.memory?.takeIf { it.totalBytes > 0 }
                     MiniStat(
                         icon = AppIcons.DeveloperBoard,
                         title = "Memory",
