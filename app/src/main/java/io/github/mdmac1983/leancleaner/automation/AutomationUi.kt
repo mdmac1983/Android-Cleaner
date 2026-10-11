@@ -60,7 +60,15 @@ fun AccessibilitySetupDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "On the next screen, turn on \"Lean Cleaner: clear app caches\".",
+                    "Android may later remind you that Lean Cleaner \"can view and control your screen\". That's the " +
+                        "standard notice for this kind of permission; you can switch the service off any time.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "On the next screen, open \"Lean Cleaner: clear app caches\" (it may be under \"Downloaded apps\" " +
+                        "or \"Installed apps\") and turn it on.",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )

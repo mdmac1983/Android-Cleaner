@@ -10,6 +10,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
@@ -290,14 +291,20 @@ object CacheAutomation {
         if (state.value is State.Finished) state.value = State.Idle
     }
 
+    /**
+     * The system's accessibility settings. The per-service details page is a system-only API, so this
+     * opens the list and (on AOSP-based Settings) scrolls to and highlights our entry.
+     */
     fun settingsIntent(context: Context): Intent {
-        val component = ComponentName(context, CacheCleanerService::class.java).flattenToString()
-        return Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
-            .putExtra(Intent.EXTRA_COMPONENT_NAME, component)
+        val key = ComponentName(context, CacheCleanerService::class.java).flattenToString()
+        return Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            .putExtra(EXTRA_FRAGMENT_ARG_KEY, key)
+            .putExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS, Bundle().apply { putString(EXTRA_FRAGMENT_ARG_KEY, key) })
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
-    fun fallbackSettingsIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    fun fallbackSettingsIntent(): Intent = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+    private const val EXTRA_FRAGMENT_ARG_KEY = ":settings:fragment_args_key"
+    private const val EXTRA_SHOW_FRAGMENT_ARGUMENTS = ":settings:show_fragment_args"
 }
