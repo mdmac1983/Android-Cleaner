@@ -50,7 +50,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,8 +74,6 @@ import io.github.mdmac1983.leancleaner.ui.components.ScanProgress
 import io.github.mdmac1983.leancleaner.ui.components.ToolScaffold
 import io.github.mdmac1983.leancleaner.ui.components.rememberMessageSnackbar
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
-import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.launch
 
 @Composable
 fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
@@ -90,19 +87,15 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
     val usageAccess by vm.hasUsageAccess.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
-    val snackbar = rememberMessageSnackbar(remember(vm) { merge(vm.messages, CacheCleaner.messages) })
-    val scope = rememberCoroutineScope()
+    val snackbar = rememberMessageSnackbar(vm.messages)
     var setup by rememberSaveable { mutableStateOf(false) }
     if (setup) AccessibilitySetupDialog(onDismiss = { setup = false })
 
     fun clearCache(packages: Collection<String>) {
-        val chosen = packages.toList()
-        scope.launch {
-            when (val result = CacheCleaner.clean(context, chosen)) {
-                CacheCleaner.StartResult.NEEDS_SETUP -> setup = true
-                CacheCleaner.StartResult.STARTED -> vm.clearSelection()
-                else -> CacheCleaner.message(result)?.let { snackbar.showSnackbar(it) }
-            }
+        when (val result = CacheCleaner.clean(context, packages)) {
+            CacheCleaner.StartResult.NEEDS_SETUP -> setup = true
+            CacheCleaner.StartResult.STARTED -> vm.clearSelection()
+            else -> CacheCleaner.message(result)?.let(vm::showMessage)
         }
     }
 

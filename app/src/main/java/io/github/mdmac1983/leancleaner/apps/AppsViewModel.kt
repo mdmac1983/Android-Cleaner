@@ -105,6 +105,10 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
         _selected.value = emptySet()
     }
 
+    fun showMessage(text: String) {
+        _messages.trySend(text)
+    }
+
     fun uninstall(packages: Collection<String>) {
         val userApps = packages.filter { pkg -> find(pkg)?.isSystem == false }
         _uninstallQueue.value = _uninstallQueue.value + userApps.filterNot { it in _uninstallQueue.value }

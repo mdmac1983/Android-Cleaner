@@ -3,9 +3,11 @@
 A small, private Android cleaner that combines the genuinely useful parts of **SD Maid**, **CCleaner** and
 **Android Assistant**, and leaves out everything else.
 
-- ~1.5 MB release APK
+- ~1.6 MB release APK
 - No ads, trackers or analytics, no accounts, and **no INTERNET permission**
-- Nothing runs in the background: no services, notifications or scheduled jobs
+- Nothing runs in the background: no notifications or scheduled jobs. The only service is the optional
+  cache-cleaning accessibility service; while it's switched on Android keeps it loaded, but it ignores
+  everything until you start a run (you can switch it off again after use)
 - Nothing is deleted until you've reviewed it, and one copy of every duplicate is always kept
 
 ## Features
@@ -26,8 +28,9 @@ A small, private Android cleaner that combines the genuinely useful parts of **S
 - **RAM boosters / task killers.** Android manages memory itself; killing apps makes them cold-start
   again and costs battery. The monitor shows memory but has no "boost" button.
 - **CPU coolers, battery savers, "deep clean" scores.** These are placebo on modern Android.
-- **Background scanning, notifications, widgets, scheduled cleaning.** The app runs only when you open it;
-  live stats stop polling when it leaves the screen.
+- **Background scanning, notifications, widgets, scheduled cleaning.** The app works only when you open it
+  (the optional accessibility service only acts during a cleaning run you start); live stats stop polling when
+  it leaves the screen.
 - **Network features, cloud backup, accounts, ads, upsells.** The app can't reach the internet, and
   backups of its settings are disabled too.
 - **Heavy dependencies.** Jetpack Compose and AndroidX core only: no DI framework, no database, no image
@@ -81,7 +84,7 @@ for you.
 ./gradlew testDebugUnitTest   # JVM unit tests for the scan/delete engines
 ./gradlew lintDebug           # Android lint
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
-./gradlew assembleRelease     # minified ~1.5 MB APK in app/build/outputs/apk/release/
+./gradlew assembleRelease     # minified ~1.6 MB APK in app/build/outputs/apk/release/
 ```
 
 **Release signing:** create an untracked `keystore.properties` in the project root:
@@ -100,8 +103,10 @@ Without it, release builds are signed with the debug key so they still install.
 the repository secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
 
 **Releases:** with those secrets in place, run *Actions > Release > Run workflow* (or push a tag like `v1.1.0`)
-to publish a GitHub Release with the signed APK and its SHA-256 checksum. The workflow refuses to publish
-without the signing secrets, so every release is signed with the same key and installs as an update.
+to publish a GitHub Release with the signed APK and its SHA-256 checksum. Bump `versionCode` and `versionName`
+in `app/build.gradle.kts` first: the workflow refuses a tag that doesn't match `versionName` or that already
+exists on another commit, and it refuses to publish without the signing secrets, so every release is signed
+with the same key and installs as an update.
 
 ## Project layout
 

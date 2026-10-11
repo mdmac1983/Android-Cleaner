@@ -40,15 +40,13 @@ jobs:
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+          # Backslashes are escapes in .properties files, so they're doubled.
           {
             echo "storeFile=release.jks"
-            echo "storePassword=$KEYSTORE_PASSWORD"
-            echo "keyAlias=$KEY_ALIAS"
-            echo "keyPassword=$KEY_PASSWORD"
+            printf 'storePassword=%s\n' "${KEYSTORE_PASSWORD//\\/\\\\}"
+            printf 'keyAlias=%s\n' "${KEY_ALIAS//\\/\\\\}"
+            printf 'keyPassword=%s\n' "${KEY_PASSWORD//\\/\\\\}"
           } > keystore.properties
-
-      - name: Test and build
-        run: ./gradlew testDebugUnitTest lintDebug assembleRelease
 
       - name: Determine tag
         id: tag
@@ -68,9 +66,19 @@ jobs:
             *) echo "::error::Tag '$TAG' must look like v1.2.3"; exit 1 ;;
           esac
           if [ "$TAG" != "v$NAME" ]; then
-            echo "::warning::Tag $TAG differs from versionName $NAME in app/build.gradle.kts"
+            echo "::error::Tag $TAG doesn't match versionName $NAME in app/build.gradle.kts. Bump versionName (and versionCode) first."
+            exit 1
+          fi
+          # An existing tag must point at the commit being built, or the APK wouldn't match the release's source.
+          TAGGED=$(git ls-remote --tags origin "refs/tags/$TAG^{}" "refs/tags/$TAG" | tail -1 | cut -f1)
+          if [ -n "$TAGGED" ] && [ "$TAGGED" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $TAG already exists on commit $TAGGED, not on $GITHUB_SHA. Bump the version for a new release."
+            exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build
+        run: ./gradlew testDebugUnitTest lintDebug assembleRelease
 
       - name: Verify signature and package
         env:

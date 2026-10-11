@@ -33,11 +33,12 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+            # Backslashes are escapes in .properties files, so they're doubled.
             {
               echo "storeFile=release.jks"
-              echo "storePassword=$KEYSTORE_PASSWORD"
-              echo "keyAlias=$KEY_ALIAS"
-              echo "keyPassword=$KEY_PASSWORD"
+              printf 'storePassword=%s\n' "${KEYSTORE_PASSWORD//\\/\\\\}"
+              printf 'keyAlias=%s\n' "${KEY_ALIAS//\\/\\\\}"
+              printf 'keyPassword=%s\n' "${KEY_PASSWORD//\\/\\\\}"
             } > keystore.properties
             echo "Release signing configured."
           else

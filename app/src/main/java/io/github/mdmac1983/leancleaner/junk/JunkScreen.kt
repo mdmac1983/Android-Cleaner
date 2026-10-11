@@ -36,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,14 +65,12 @@ import io.github.mdmac1983.leancleaner.ui.components.prettyParent
 import io.github.mdmac1983.leancleaner.ui.components.prettyPath
 import io.github.mdmac1983.leancleaner.ui.components.rememberMessageSnackbar
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
-import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.launch
 
 @Composable
 fun JunkScreen(onBack: () -> Unit, vm: JunkViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
-    val snackbar = rememberMessageSnackbar(remember(vm) { merge(vm.messages, CacheCleaner.messages) })
+    val snackbar = rememberMessageSnackbar(vm.messages)
     var confirm by remember { mutableStateOf(false) }
 
     val results = (state as? JunkState.Results)?.items
@@ -150,7 +147,6 @@ private fun JunkResults(items: List<JunkItem>, selected: Set<String>, vm: JunkVi
         vm.onSystemCacheCleared(it.resultCode == Activity.RESULT_OK)
     }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var setup by rememberSaveable { mutableStateOf(false) }
     if (setup) AccessibilitySetupDialog(onDismiss = { setup = false })
 
@@ -177,10 +173,8 @@ private fun JunkResults(items: List<JunkItem>, selected: Set<String>, vm: JunkVi
             AppCacheCard(
                 appCache = appCache,
                 onClearAll = {
-                    scope.launch {
-                        val result = CacheCleaner.cleanAll(context)
-                        if (result == CacheCleaner.StartResult.NEEDS_SETUP) setup = true else CacheCleaner.message(result)?.let(vm::showMessage)
-                    }
+                    val result = CacheCleaner.cleanAll(context)
+                    if (result == CacheCleaner.StartResult.NEEDS_SETUP) setup = true else CacheCleaner.message(result)?.let(vm::showMessage)
                 },
                 onSystemDialog = if (SystemCacheCleaner.isSupported) {
                     {

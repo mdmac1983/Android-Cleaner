@@ -10,6 +10,7 @@ import io.github.mdmac1983.leancleaner.core.DeleteRequest
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Volumes
 import io.github.mdmac1983.leancleaner.core.deleteFiles
+import io.github.mdmac1983.leancleaner.core.sizeOf
 import io.github.mdmac1983.leancleaner.core.summary
 import io.github.mdmac1983.leancleaner.prefs
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 sealed interface JunkState {
     data object Idle : JunkState
@@ -47,8 +49,13 @@ class JunkViewModel(app: Application) : AndroidViewModel(app) {
     private var job: Job? = null
 
     init {
-        // Refresh the cache total after an automated cache-clearing run.
-        viewModelScope.launch { CacheCleaner.completedRuns.drop(1).collect { refreshAppCache() } }
+        // Refresh the cache total (and the Android/data caches it also emptied) after an automated run.
+        viewModelScope.launch {
+            CacheCleaner.completedRuns.drop(1).collect {
+                refreshAppCache()
+                remeasureAppCacheItems()
+            }
+        }
     }
 
     fun scan() {
@@ -125,6 +132,27 @@ class JunkViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAppCache() {
         viewModelScope.launch {
             _appCacheBytes.value = withContext(Dispatchers.IO) { AppRepository(getApplication()).totalCacheBytes() }
+        }
+    }
+
+    /**
+     * "Clear cache" in Settings also empties `Android/data/<pkg>/cache` (listed here on Android 8-10), so
+     * re-measure those results and drop the ones that are empty now instead of offering to clean them again.
+     */
+    private fun remeasureAppCacheItems() {
+        val current = _state.value as? JunkState.Results ?: return
+        val caches = current.items.filter { it.category == JunkCategory.APP_CACHE }
+        if (caches.isEmpty()) return
+        viewModelScope.launch {
+            val sizes = withContext(Dispatchers.IO) { caches.associate { it.path to sizeOf(File(it.path)) } }
+            if (_state.value !== current) return@launch // rescanned or cleaned meanwhile
+            val items = current.items.mapNotNull { item ->
+                val size = sizes[item.path] ?: return@mapNotNull item
+                if (size > 0) item.copy(size = size) else null
+            }
+            val paths = items.mapTo(HashSet()) { it.path }
+            _selected.value = _selected.value.filterTo(HashSet()) { it in paths }
+            _state.value = JunkState.Results(items)
         }
     }
 

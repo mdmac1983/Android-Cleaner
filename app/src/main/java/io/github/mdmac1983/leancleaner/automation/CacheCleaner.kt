@@ -7,28 +7,30 @@ import io.github.mdmac1983.leancleaner.prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
  * Starts automated cache-clearing runs and reports how they went (including how much was freed,
- * when usage access lets us measure it).
+ * when usage access lets us measure it). Lives as long as the process, so leaving a screen or
+ * rotating the phone never cancels a run that is being prepared.
  */
 object CacheCleaner {
 
-    enum class StartResult { STARTED, NEEDS_SETUP, NOT_CONNECTED, NOTHING_TO_CLEAN, BUSY }
+    enum class StartResult { STARTED, NEEDS_SETUP, NOT_CONNECTED, BUSY }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val _messages = Channel<String>(Channel.BUFFERED)
 
-    /** One-off summaries ("Cleared the cache of 42 apps · freed 1.2 GB") for whichever screen is visible. */
-    val messages: Flow<String> = _messages.receiveAsFlow()
+    private val _summary = MutableStateFlow<String?>(null)
+
+    /**
+     * The latest message about a run ("Cleared the cache of 42 apps · freed 1.2 GB"). It stays until a
+     * screen has actually shown it and calls [consumeSummary], so it survives configuration changes.
+     */
+    val summary: StateFlow<String?> = _summary.asStateFlow()
 
     private val _preparing = MutableStateFlow(false)
 
@@ -45,38 +47,63 @@ object CacheCleaner {
     private var pending: Pending? = null
     private var observing = false
 
-    /** Clears every app with a meaningful cache. */
-    suspend fun cleanAll(context: Context): StartResult {
+    /** Clears every app with a meaningful cache (and this app's own cache directly). */
+    fun cleanAll(context: Context): StartResult = launchRun(context) { app ->
+        clearOwnCache(app)
+        AppRepository(app).cacheCleanTargets()
+    }
+
+    /** Clears the given apps only. This app's own cache, if selected, is cleared directly. */
+    fun clean(context: Context, packages: Collection<String>): StartResult {
         val app = context.applicationContext
-        return prepare(app) {
-            clearOwnCache(app)
-            AppRepository(app).cacheCleanTargets()
+        val others = packages.filter { it != app.packageName }
+        if (others.isEmpty()) {
+            // Only Lean Cleaner itself: no accessibility service needed for that.
+            scope.launch {
+                withContext(Dispatchers.IO) { clearOwnCache(app) }
+                _summary.value = "Cleared Lean Cleaner's own cache"
+                _completedRuns.value++
+            }
+            return StartResult.STARTED
+        }
+        return launchRun(context) {
+            if (app.packageName in packages) clearOwnCache(app)
+            AppRepository(app).cacheCleanTargets(others)
         }
     }
 
-    /** Clears the given apps only. */
-    suspend fun clean(context: Context, packages: Collection<String>): StartResult {
-        val app = context.applicationContext
-        return prepare(app) { AppRepository(app).cacheCleanTargets(packages) }
-    }
-
-    private suspend fun prepare(app: Context, findTargets: () -> List<CleanTarget>): StartResult {
-        precheck(app)?.let { return it }
-        _preparing.value = true
-        try {
-            val targets = withContext(Dispatchers.IO) { findTargets() }
-            return start(app, targets)
-        } finally {
-            _preparing.value = false
-        }
-    }
+    /** Marks [shown] as displayed; false if another screen already took it. */
+    fun consumeSummary(shown: String): Boolean = _summary.compareAndSet(shown, null)
 
     fun message(result: StartResult): String? = when (result) {
         StartResult.STARTED -> null
         StartResult.NEEDS_SETUP -> "Turn on the accessibility service first"
         StartResult.NOT_CONNECTED -> "The accessibility service isn't running. Turn it off and on again in Settings."
-        StartResult.NOTHING_TO_CLEAN -> "No app caches worth clearing right now"
         StartResult.BUSY -> "A cleaning run is already in progress"
+    }
+
+    /**
+     * Checks the preconditions right away (so the UI can show the setup dialog), then measures the
+     * targets and starts the run in the background. Later problems are reported through [summary].
+     */
+    private fun launchRun(context: Context, findTargets: (Context) -> List<CleanTarget>): StartResult {
+        val app = context.applicationContext
+        precheck(app)?.let { return it }
+        _preparing.value = true
+        scope.launch {
+            val result = try {
+                val targets = withContext(Dispatchers.IO) { findTargets(app) }
+                if (targets.isEmpty()) {
+                    _summary.value = "No other app caches worth clearing right now"
+                    return@launch
+                }
+                start(app, targets)
+            } finally {
+                _preparing.value = false
+            }
+            message(result)?.let { _summary.value = it }
+        }
+        return StartResult.STARTED
     }
 
     private fun precheck(app: Context): StartResult? = when {
@@ -91,7 +118,6 @@ object CacheCleaner {
         if (!CacheAutomation.isEnabled(app)) return StartResult.NEEDS_SETUP
         if (!CacheAutomation.isConnected) return StartResult.NOT_CONNECTED
         if (CacheAutomation.state.value is CacheAutomation.State.Running) return StartResult.BUSY
-        if (targets.isEmpty()) return StartResult.NOTHING_TO_CLEAN
         observe(app)
         val known = targets.mapNotNull { it.cacheBytes }
         pending = Pending(targets.map { it.packageName }, if (known.size == targets.size) known.sum() else null)
@@ -122,7 +148,7 @@ object CacheCleaner {
             null
         }
         if (freed != null) app.prefs.addFreed(freed)
-        _messages.send(summary(state, freed))
+        _summary.value = summary(state, freed)
         CacheAutomation.acknowledge()
         _completedRuns.value++
     }

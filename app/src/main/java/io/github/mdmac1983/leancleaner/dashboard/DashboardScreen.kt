@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.mdmac1983.leancleaner.Route
-import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Volume
 import io.github.mdmac1983.leancleaner.core.Volumes
@@ -70,7 +69,7 @@ private class Overview(val volumes: List<Volume>, val memory: MemorySnapshot, va
 fun DashboardScreen(onOpen: (Route) -> Unit, onQuickClean: () -> Unit) {
     val context = LocalContext.current
     val freed by context.prefs.totalFreed.collectAsStateWithLifecycle()
-    val snackbar = rememberMessageSnackbar(CacheCleaner.messages)
+    val snackbar = rememberMessageSnackbar()
     val overview by rememberPolled(3_000) {
         Overview(Volumes.list(context), SystemInfo.memory(context), SystemInfo.battery(context))
     }

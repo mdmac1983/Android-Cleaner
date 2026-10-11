@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,7 +49,7 @@ fun StorageGate(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
     val context = LocalContext.current
     // The permission dialog pauses/resumes this screen, so the resume check picks up the result.
     val granted = rememberPermissionState { Permissions.hasStorageAccess(context) }
-    var denials by remember { mutableStateOf(0) }
+    var denials by remember { mutableIntStateOf(0) }
     val legacyRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (!Permissions.hasStorageAccess(context) && ++denials >= 2) {
             // Denied again (possibly "don't ask again"): the app's settings page is the only way left.

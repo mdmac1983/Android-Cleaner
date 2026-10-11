@@ -40,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,10 +52,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.FileKind
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,12 +88,21 @@ fun ToolScaffold(
     )
 }
 
-/** Shows one-off messages (e.g. "Freed 1.2 GB") from a ViewModel flow as snackbars. */
+/**
+ * Shows one-off messages (e.g. "Freed 1.2 GB") from a ViewModel flow as snackbars, plus the summary of
+ * the latest one-tap cache-cleaning run, which can finish while any screen is open.
+ */
 @Composable
-fun rememberMessageSnackbar(messages: Flow<String>): SnackbarHostState {
+fun rememberMessageSnackbar(messages: Flow<String> = emptyFlow()): SnackbarHostState {
     val host = remember { SnackbarHostState() }
     LaunchedEffect(messages) {
         messages.collect { host.showSnackbar(it) }
+    }
+    val cacheSummary by CacheCleaner.summary.collectAsStateWithLifecycle()
+    LaunchedEffect(cacheSummary) {
+        val text = cacheSummary ?: return@LaunchedEffect
+        // Only one screen gets to show it (two are composed during a transition).
+        if (CacheCleaner.consumeSummary(text)) host.showSnackbar(text)
     }
     return host
 }
