@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +42,7 @@ private class LiveStats(
     val cpu: CpuSnapshot,
     val memory: MemorySnapshot,
     val battery: BatterySnapshot?,
+    val network: TrafficReading?,
     val thermal: String?,
     val volumes: List<Volume>,
     val uptime: Long,
@@ -51,11 +53,13 @@ private class LiveStats(
 fun MonitorScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val device = remember { SystemInfo.device(context) }
+    val traffic = remember { TrafficMeter() }
     val stats by rememberPolled(1_000) {
         LiveStats(
             cpu = SystemInfo.cpu(),
             memory = SystemInfo.memory(context),
             battery = SystemInfo.battery(context),
+            network = traffic.sample(),
             thermal = SystemInfo.thermalStatus(context),
             volumes = Volumes.list(context),
             uptime = SystemInfo.uptimeMillis(),
@@ -77,6 +81,7 @@ fun MonitorScreen(onBack: () -> Unit) {
         ) {
             item(key = "cpu") { CpuCard(s.cpu, s.thermal) }
             item(key = "memory") { MemoryCard(s.memory) }
+            item(key = "network") { NetworkCard(s.network) }
             s.battery?.let { battery -> item(key = "battery") { BatteryCard(battery) } }
             item(key = "storage") {
                 StatCard("Storage", AppIcons.SdStorage) {
@@ -165,6 +170,46 @@ private fun MemoryCard(memory: MemorySnapshot) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
+    }
+}
+
+@Composable
+private fun NetworkCard(reading: TrafficReading?) {
+    StatCard("Network traffic", AppIcons.Wifi) {
+        if (reading == null) {
+            Text("This device doesn't report network traffic.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@StatCard
+        }
+        val rates = reading.rates
+        SpeedRow("Wi-Fi", rates?.wifiDown, rates?.wifiUp)
+        SpeedRow("Mobile data", rates?.mobileDown, rates?.mobileUp)
+        val c = reading.counters
+        InfoRow("Wi-Fi since boot", "↓ ${Format.size(c.wifiRx)} · ↑ ${Format.size(c.wifiTx)}")
+        InfoRow("Mobile since boot", "↓ ${Format.size(c.mobileRx)} · ↑ ${Format.size(c.mobileTx)}")
+        Text(
+            "All apps combined, updated every second. Wi-Fi also counts Ethernet and tethering.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun SpeedRow(label: String, down: Long?, up: Long?) {
+    Text(label, style = MaterialTheme.typography.bodyMedium)
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp)) {
+        SpeedValue("Download", "↓", down, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+        SpeedValue("Upload", "↑", up, MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SpeedValue(label: String, arrow: String, bytesPerSecond: Long?, color: Color, modifier: Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // The first reading has no speed yet; it appears after one second.
+        Text("$arrow ${bytesPerSecond?.let { Format.speed(it) } ?: "–"}", style = MaterialTheme.typography.titleLarge, color = color)
     }
 }
 

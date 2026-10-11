@@ -22,6 +22,18 @@ class FormatTest {
     }
 
     @Test
+    fun `speeds switch from KB per second to MB per second`() {
+        assertEquals("0.0 KB/s", Format.speed(0, Locale.US))
+        assertEquals("0.5 KB/s", Format.speed(500, Locale.US))
+        assertEquals("12 KB/s", Format.speed(12_300, Locale.US))
+        assertEquals("999 KB/s", Format.speed(999_000, Locale.US))
+        assertEquals("1.0 MB/s", Format.speed(999_600, Locale.US))
+        assertEquals("12.5 MB/s", Format.speed(12_500_000, Locale.US))
+        assertEquals("120 MB/s", Format.speed(120_000_000, Locale.US))
+        assertEquals("0.0 KB/s", Format.speed(-5, Locale.US))
+    }
+
+    @Test
     fun `relative ages`() {
         val now = 1_000_000_000_000L
         val day = TimeUnit.DAYS.toMillis(1)

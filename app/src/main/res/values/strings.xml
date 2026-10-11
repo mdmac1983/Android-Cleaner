@@ -8,4 +8,21 @@
     <string name="automation_overlay_starting">Starting…</string>
     <string name="automation_overlay_progress">Clearing cache %1$d of %2$d · %3$s</string>
     <string name="automation_overlay_stop">Stop</string>
+    <string name="widget_stats_label">System stats</string>
+    <string name="widget_stats_description">Battery, RAM, storage and Wi-Fi speed at a glance</string>
+    <string name="widget_quick_clean_label">Quick clean</string>
+    <string name="widget_quick_clean_description">Scan for junk or clear all app caches with one tap</string>
+    <string name="widget_battery">Battery</string>
+    <string name="widget_ram">RAM</string>
+    <string name="widget_storage">Storage</string>
+    <string name="widget_wifi">Wi-Fi</string>
+    <string name="widget_mobile">Mobile</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_placeholder">–</string>
+    <string name="widget_placeholder_down">↓ –</string>
+    <string name="widget_placeholder_up">↑ –</string>
+    <string name="widget_quick_clean_title">Quick clean</string>
+    <string name="widget_quick_clean_hint">Tap to free up space</string>
+    <string name="widget_scan_junk">Scan junk</string>
+    <string name="widget_clear_caches">Clear caches</string>
 </resources>

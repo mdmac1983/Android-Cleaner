@@ -60,6 +60,36 @@
             </intent-filter>
         </activity>
 
+        <!-- Widget buttons go through this non-exported alias, so other apps can't trigger their actions. -->
+        <activity-alias
+            android:name=".WidgetAction"
+            android:exported="false"
+            android:targetActivity=".MainActivity" />
+
+        <!-- Home screen widgets. They only update while the phone is awake (no wakeups, no service). -->
+        <receiver
+            android:name=".widget.StatsWidget"
+            android:exported="true"
+            android:label="@string/widget_stats_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_stats_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.QuickCleanWidget"
+            android:exported="true"
+            android:label="@string/widget_quick_clean_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_clean_info" />
+        </receiver>
+
         <!-- Optional "clear all app caches" automation; does nothing until the user starts a run. -->
         <service
             android:name=".automation.CacheCleanerService"

@@ -5,7 +5,7 @@ A small, private Android cleaner that combines the genuinely useful parts of **S
 
 - ~1.6 MB release APK
 - No ads, trackers or analytics, no accounts, and **no INTERNET permission**
-- Nothing runs in the background: no notifications or scheduled jobs. The only service is the optional
+- Nothing runs in the background: no notifications, no wakeups or scheduled jobs. The only service is the optional
   cache-cleaning accessibility service; while it's switched on Android keeps it loaded, but it ignores
   everything until you start a run (you can switch it off again after use)
 - Nothing is deleted until you've reviewed it, and one copy of every duplicate is always kept
@@ -20,7 +20,8 @@ A small, private Android cleaner that combines the genuinely useful parts of **S
 | **Duplicates** | Finds byte-identical files using a size → partial hash → SHA-256 pipeline, so most files are never fully read. Auto-select keeps the oldest, newest or shortest-path copy; the last copy can never be selected. | SD Maid Deduplicator, CCleaner duplicates |
 | **Storage analyzer** | Breakdown by file type, a folder browser sorted by size (drill down and delete), and a list of your largest files with type filters. | SD Maid Storage Analyzer, CCleaner Analyze |
 | **Apps** | All apps with size, data, cache and last-used date. Filter by user/system, show apps unused for 30+ days, sort by size, cache, last use or install date. Batch uninstall, export APKs (split apps become `.apks`), and jump to App info for clear cache / force stop. | SD Maid AppControl, CCleaner App Manager, Android Assistant batch uninstall |
-| **System monitor** | Live CPU core frequencies, thermal state, memory, battery (level, temperature, current, voltage, health, estimated capacity, cycle count), storage and device details. | Android Assistant |
+| **System monitor** | Live CPU core frequencies, thermal state, memory, network traffic (Wi-Fi and mobile download/upload speeds in KB/s or MB/s, plus totals since boot), battery (level, temperature, current, voltage, health, estimated capacity, cycle count), storage and device details. | Android Assistant |
+| **Widgets** | *System stats* (battery, RAM, storage and Wi-Fi speed in one widget) and *Quick clean* (scan for junk, or clear all app caches with one tap). | Android Assistant, CCleaner |
 | **Exclusions** | Long-press any scan result (or use Settings) to protect a file or folder from every tool. | SD Maid exclusions |
 
 ### Deliberately left out (the "bloat")
@@ -28,13 +29,27 @@ A small, private Android cleaner that combines the genuinely useful parts of **S
 - **RAM boosters / task killers.** Android manages memory itself; killing apps makes them cold-start
   again and costs battery. The monitor shows memory but has no "boost" button.
 - **CPU coolers, battery savers, "deep clean" scores.** These are placebo on modern Android.
-- **Background scanning, notifications, widgets, scheduled cleaning.** The app works only when you open it
-  (the optional accessibility service only acts during a cleaning run you start); live stats stop polling when
-  it leaves the screen.
+- **Background scanning, notifications, scheduled cleaning.** The app works only when you open it (the optional
+  accessibility service only acts during a cleaning run you start); live stats stop polling when it leaves the
+  screen. The optional System stats widget refreshes about once a minute, and only while the phone is awake
+  anyway: it never wakes the phone and does nothing while the screen is off.
 - **Network features, cloud backup, accounts, ads, upsells.** The app can't reach the internet, and
   backups of its settings are disabled too.
 - **Heavy dependencies.** Jetpack Compose and AndroidX core only: no DI framework, no database, no image
   loader, and no 10 MB icon pack (only the 42 icons used are bundled).
+
+### Widgets
+
+- **System stats** (4×2, resizable): battery level, temperature and status; RAM and storage use; and the current
+  Wi-Fi download and upload speed (it switches to mobile data while that's what's carrying traffic). Tap a gauge to
+  open the System monitor, or the network cell to refresh right away. Android lets widgets update only now and
+  then, so the speed is a one-second measurement taken at each refresh, not a live counter; the System monitor
+  shows live speeds.
+- **Quick clean** (2×2): *Scan junk* opens the Junk cleaner and starts a scan (you still review everything before
+  it's deleted); *Clear caches* starts one-tap app cache cleaning. It also shows how much space has been freed.
+
+Network speeds cover all apps and come from the system's traffic counters, so no network permission is needed.
+"Wi-Fi" also counts Ethernet and tethering.
 
 ## Permissions
 
@@ -119,7 +134,8 @@ app/src/main/java/io/github/mdmac1983/leancleaner/
 ├── analyzer/    StorageAnalyzer (size tree) + screen
 ├── apps/        App list, sizes, usage, APK export + screen
 ├── automation/  Accessibility cache cleaning: Settings navigation (pure Kotlin), service, setup UI
-├── monitor/     CPU / memory / battery / device readers + screen
+├── monitor/     CPU / memory / battery / network traffic / device readers + screen
+├── widget/      System stats and Quick clean home screen widgets
 ├── dashboard/   Home screen
 ├── settings/    Permissions, exclusions, preferences
 └── ui/          Theme, shared components, bundled icons

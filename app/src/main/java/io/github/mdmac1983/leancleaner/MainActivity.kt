@@ -1,6 +1,8 @@
 package io.github.mdmac1983.leancleaner
 
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -26,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mdmac1983.leancleaner.analyzer.AnalyzerScreen
 import io.github.mdmac1983.leancleaner.apps.AppsScreen
+import io.github.mdmac1983.leancleaner.automation.AccessibilitySetupDialog
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.Permissions
 import io.github.mdmac1983.leancleaner.corpse.CorpseScreen
 import io.github.mdmac1983.leancleaner.dashboard.DashboardScreen
@@ -36,20 +42,34 @@ import io.github.mdmac1983.leancleaner.junk.JunkViewModel
 import io.github.mdmac1983.leancleaner.monitor.MonitorScreen
 import io.github.mdmac1983.leancleaner.settings.SettingsScreen
 import io.github.mdmac1983.leancleaner.ui.theme.LeanCleanerTheme
+import io.github.mdmac1983.leancleaner.widget.Widgets
+import kotlinx.coroutines.flow.MutableStateFlow
 
 enum class Route { DASHBOARD, JUNK, LEFTOVERS, DUPLICATES, ANALYZER, APPS, MONITOR, SETTINGS }
 
 class MainActivity : ComponentActivity() {
+    /** A pending action from a home screen widget button. */
+    private val widgetAction = MutableStateFlow<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Not again after rotation: the launch intent stays the same.
+        if (savedInstanceState == null) widgetAction.value = Widgets.actionOf(intent)
         setContent {
             LeanCleanerTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AppRoot()
+                    val action by widgetAction.collectAsState()
+                    AppRoot(action, onWidgetActionHandled = { widgetAction.value = null })
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        widgetAction.value = Widgets.actionOf(intent)
     }
 }
 
@@ -63,14 +83,40 @@ private val BackStackSaver = Saver<List<Route>, ArrayList<String>>(
  * Tool ViewModels are activity-scoped, so scan results survive going back to the dashboard.
  */
 @Composable
-private fun AppRoot() {
+private fun AppRoot(widgetAction: String?, onWidgetActionHandled: () -> Unit) {
     val context = LocalContext.current
     var stack by rememberSaveable(stateSaver = BackStackSaver) { mutableStateOf(listOf(Route.DASHBOARD)) }
     val holder = rememberSaveableStateHolder()
     val junk: JunkViewModel = viewModel()
+    var cacheSetup by rememberSaveable { mutableStateOf(false) }
+    if (cacheSetup) AccessibilitySetupDialog(onDismiss = { cacheSetup = false })
 
     fun open(route: Route) {
         stack = stack + route
+    }
+
+    fun quickClean() {
+        if (Permissions.hasStorageAccess(context) && junk.state.value !is JunkState.Scanning) junk.scan()
+    }
+
+    LaunchedEffect(widgetAction) {
+        when (widgetAction) {
+            Widgets.ACTION_QUICK_CLEAN -> {
+                quickClean()
+                stack = listOf(Route.DASHBOARD, Route.JUNK)
+            }
+            Widgets.ACTION_CLEAR_CACHES -> {
+                stack = listOf(Route.DASHBOARD, Route.JUNK)
+                when (val result = CacheCleaner.cleanAll(context)) {
+                    CacheCleaner.StartResult.NEEDS_SETUP -> cacheSetup = true
+                    else -> CacheCleaner.message(result)?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                }
+            }
+            Widgets.ACTION_MONITOR -> stack = listOf(Route.DASHBOARD, Route.MONITOR)
+            Widgets.ACTION_OPEN -> Unit
+            else -> return@LaunchedEffect
+        }
+        onWidgetActionHandled()
     }
 
     fun back() {
@@ -93,7 +139,7 @@ private fun AppRoot() {
                 Route.DASHBOARD -> DashboardScreen(
                     onOpen = ::open,
                     onQuickClean = {
-                        if (Permissions.hasStorageAccess(context) && junk.state.value !is JunkState.Scanning) junk.scan()
+                        quickClean()
                         open(Route.JUNK)
                     },
                 )

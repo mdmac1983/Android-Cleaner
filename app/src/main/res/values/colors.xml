@@ -2,4 +2,16 @@
 <resources>
     <color name="window_background">#F4FBF8</color>
     <color name="ic_launcher_background">#006A60</color>
+
+    <!-- Home screen widgets -->
+    <color name="widget_background">#F4FBF8</color>
+    <color name="widget_on_surface">#161D1B</color>
+    <color name="widget_on_surface_variant">#3F4946</color>
+    <color name="widget_primary">#006A60</color>
+    <color name="widget_tertiary">#456179</color>
+    <color name="widget_track">#DAE5E1</color>
+    <color name="widget_button">#006A60</color>
+    <color name="widget_on_button">#FFFFFF</color>
+    <color name="widget_button_tonal">#CCE8E2</color>
+    <color name="widget_on_button_tonal">#051F1C</color>
 </resources>

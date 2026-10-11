@@ -25,6 +25,17 @@ object Format {
         return String.format(locale, pattern, value, units[unit])
     }
 
+    /** Transfer speed: KB/s below 1 MB/s, MB/s above (decimal units, like [size]). */
+    fun speed(bytesPerSecond: Long, locale: Locale = Locale.getDefault()): String {
+        val kb = bytesPerSecond.coerceAtLeast(0) / 1000.0
+        return when {
+            kb < 10 -> String.format(locale, "%.1f KB/s", kb)
+            kb < 999.5 -> String.format(locale, "%.0f KB/s", kb)
+            kb < 99_950 -> String.format(locale, "%.1f MB/s", kb / 1000)
+            else -> String.format(locale, "%.0f MB/s", kb / 1000)
+        }
+    }
+
     fun count(n: Int, singular: String, plural: String = singular + "s"): String =
         "$n ${if (n == 1) singular else plural}"
 

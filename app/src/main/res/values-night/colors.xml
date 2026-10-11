@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="window_background">#0E1513</color>
+
+    <!-- Home screen widgets -->
+    <color name="widget_background">#1A211F</color>
+    <color name="widget_on_surface">#DDE4E1</color>
+    <color name="widget_on_surface_variant">#BEC9C5</color>
+    <color name="widget_primary">#80D5C8</color>
+    <color name="widget_tertiary">#ADCAE6</color>
+    <color name="widget_track">#3F4946</color>
+    <color name="widget_button">#80D5C8</color>
+    <color name="widget_on_button">#003732</color>
+    <color name="widget_button_tonal">#334B47</color>
+    <color name="widget_on_button_tonal">#CCE8E2</color>
 </resources>
