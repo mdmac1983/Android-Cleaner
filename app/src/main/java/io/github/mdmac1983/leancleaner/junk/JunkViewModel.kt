@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.mdmac1983.leancleaner.apps.AppRepository
 import io.github.mdmac1983.leancleaner.apps.PackageManagerApkInspector
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.DeleteRequest
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Volumes
@@ -17,6 +18,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,6 +45,11 @@ class JunkViewModel(app: Application) : AndroidViewModel(app) {
     val messages = _messages.receiveAsFlow()
 
     private var job: Job? = null
+
+    init {
+        // Refresh the cache total after an automated cache-clearing run.
+        viewModelScope.launch { CacheCleaner.completedRuns.drop(1).collect { refreshAppCache() } }
+    }
 
     fun scan() {
         job?.cancel()
@@ -115,7 +122,7 @@ class JunkViewModel(app: Application) : AndroidViewModel(app) {
         _messages.trySend(text)
     }
 
-    private fun refreshAppCache() {
+    fun refreshAppCache() {
         viewModelScope.launch {
             _appCacheBytes.value = withContext(Dispatchers.IO) { AppRepository(getApplication()).totalCacheBytes() }
         }

@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +62,8 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.mdmac1983.leancleaner.automation.AccessibilitySetupDialog
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Permissions
 import io.github.mdmac1983.leancleaner.core.startActivitySafely
@@ -71,6 +74,8 @@ import io.github.mdmac1983.leancleaner.ui.components.ScanProgress
 import io.github.mdmac1983.leancleaner.ui.components.ToolScaffold
 import io.github.mdmac1983.leancleaner.ui.components.rememberMessageSnackbar
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
@@ -84,7 +89,21 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
     val usageAccess by vm.hasUsageAccess.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
-    val snackbar = rememberMessageSnackbar(vm.messages)
+    val snackbar = rememberMessageSnackbar(remember(vm) { merge(vm.messages, CacheCleaner.messages) })
+    val scope = rememberCoroutineScope()
+    var setup by rememberSaveable { mutableStateOf(false) }
+    if (setup) AccessibilitySetupDialog(onDismiss = { setup = false })
+
+    fun clearCache(packages: Collection<String>) {
+        val chosen = packages.toList()
+        scope.launch {
+            when (val result = CacheCleaner.clean(context, chosen)) {
+                CacheCleaner.StartResult.NEEDS_SETUP -> setup = true
+                CacheCleaner.StartResult.STARTED -> vm.clearSelection()
+                else -> CacheCleaner.message(result)?.let { snackbar.showSnackbar(it) }
+            }
+        }
+    }
 
     var searching by rememberSaveable { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
@@ -140,14 +159,15 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
             if (selected.isNotEmpty()) {
                 val removable = selected.count { vm.find(it)?.isSystem == false }
                 Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
-                    Row(
+                    FlowRow(
                         Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        OutlinedButton(onClick = { vm.export(selected) }, enabled = !busy) { Text("Export APKs") }
+                        OutlinedButton(onClick = { vm.export(selected) }, enabled = !busy) { Text("Export") }
+                        FilledTonalButton(onClick = { clearCache(selected) }) { Text("Clear cache") }
                         Button(
                             onClick = {
                                 vm.uninstall(selected)
@@ -238,6 +258,10 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
                 vm.uninstall(listOf(app.packageName))
             },
             onExport = { vm.export(listOf(app.packageName)) },
+            onClearCache = {
+                details = null
+                clearCache(listOf(app.packageName))
+            },
         )
     }
 }
@@ -311,7 +335,13 @@ private fun AppRow(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun AppDetailsSheet(app: AppInfo, onDismiss: () -> Unit, onUninstall: () -> Unit, onExport: () -> Unit) {
+private fun AppDetailsSheet(
+    app: AppInfo,
+    onDismiss: () -> Unit,
+    onUninstall: () -> Unit,
+    onExport: () -> Unit,
+    onClearCache: () -> Unit,
+) {
     val context = LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -343,6 +373,7 @@ private fun AppDetailsSheet(app: AppInfo, onDismiss: () -> Unit, onUninstall: ()
                 FilledTonalButton(onClick = { context.startActivitySafely(Permissions.appDetailsIntent(app.packageName)) }) {
                     Text("App info")
                 }
+                FilledTonalButton(onClick = onClearCache) { Text("Clear cache") }
                 OutlinedButton(onClick = onExport) { Text("Export APK") }
                 if (!app.isSystem) {
                     Button(
@@ -355,7 +386,7 @@ private fun AppDetailsSheet(app: AppInfo, onDismiss: () -> Unit, onUninstall: ()
                 }
             }
             Text(
-                "Clear cache, clear data and force stop are in App info.",
+                "Clear data and force stop are in App info.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),

@@ -3,6 +3,7 @@ package io.github.mdmac1983.leancleaner.apps
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Permissions
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -74,6 +76,11 @@ class AppsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
+
+    init {
+        // Sizes change after an automated cache-clearing run.
+        viewModelScope.launch { CacheCleaner.completedRuns.drop(1).collect { load(force = true) } }
+    }
 
     fun load(force: Boolean = false) {
         val access = Permissions.hasUsageAccess(getApplication())

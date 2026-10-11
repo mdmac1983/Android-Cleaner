@@ -10,6 +10,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +26,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,15 +36,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.mdmac1983.leancleaner.automation.AccessibilitySetupDialog
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
+import io.github.mdmac1983.leancleaner.automation.CacheRunProgress
 import io.github.mdmac1983.leancleaner.core.FileKind
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.SystemCacheCleaner
@@ -58,12 +66,14 @@ import io.github.mdmac1983.leancleaner.ui.components.prettyParent
 import io.github.mdmac1983.leancleaner.ui.components.prettyPath
 import io.github.mdmac1983.leancleaner.ui.components.rememberMessageSnackbar
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.launch
 
 @Composable
 fun JunkScreen(onBack: () -> Unit, vm: JunkViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
-    val snackbar = rememberMessageSnackbar(vm.messages)
+    val snackbar = rememberMessageSnackbar(remember(vm) { merge(vm.messages, CacheCleaner.messages) })
     var confirm by remember { mutableStateOf(false) }
 
     val results = (state as? JunkState.Results)?.items
@@ -139,6 +149,10 @@ private fun JunkResults(items: List<JunkItem>, selected: Set<String>, vm: JunkVi
     val clearCaches = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         vm.onSystemCacheCleared(it.resultCode == Activity.RESULT_OK)
     }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var setup by rememberSaveable { mutableStateOf(false) }
+    if (setup) AccessibilitySetupDialog(onDismiss = { setup = false })
 
     LazyColumn(
         contentPadding = PaddingValues(
@@ -159,25 +173,27 @@ private fun JunkResults(items: List<JunkItem>, selected: Set<String>, vm: JunkVi
                 )
             }
         }
-        if (SystemCacheCleaner.isSupported) {
-            item(key = "appcache") {
-                InfoCard(
-                    title = "Internal app caches",
-                    icon = AppIcons.Cached,
-                    text = appCache?.let {
-                        "${Format.size(it)} across all apps. Android can clear every app's cache in one go; apps rebuild them as needed."
-                    } ?: "Android can clear every app's cache in one go. Allow usage access in Settings to see how much that frees.",
-                    action = {
-                        Button(onClick = {
-                            try {
-                                clearCaches.launch(SystemCacheCleaner.intent())
-                            } catch (_: ActivityNotFoundException) {
-                                vm.showMessage("This device doesn't offer clearing all app caches")
-                            }
-                        }) { Text("Clear all app caches") }
-                    },
-                )
-            }
+        item(key = "appcache") {
+            AppCacheCard(
+                appCache = appCache,
+                onClearAll = {
+                    scope.launch {
+                        val result = CacheCleaner.cleanAll(context)
+                        if (result == CacheCleaner.StartResult.NEEDS_SETUP) setup = true else CacheCleaner.message(result)?.let(vm::showMessage)
+                    }
+                },
+                onSystemDialog = if (SystemCacheCleaner.isSupported) {
+                    {
+                        try {
+                            clearCaches.launch(SystemCacheCleaner.intent())
+                        } catch (_: ActivityNotFoundException) {
+                            vm.showMessage("This device doesn't offer clearing all app caches")
+                        }
+                    }
+                } else {
+                    null
+                },
+            )
         }
         if (items.isEmpty()) {
             item(key = "empty") {
@@ -309,4 +325,22 @@ private fun JunkRow(item: JunkItem, checked: Boolean, onToggle: () -> Unit, onEx
             )
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppCacheCard(appCache: Long?, onClearAll: () -> Unit, onSystemDialog: (() -> Unit)?) {
+    InfoCard(
+        title = "Internal app caches",
+        icon = AppIcons.Cached,
+        text = appCache?.let { "${Format.size(it)} across all apps. Apps rebuild their caches as needed." }
+            ?: "Clear every app's cache in one tap. Allow usage access in Settings to see how much that frees.",
+        action = {
+            CacheRunProgress()
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onClearAll) { Text("Clear all (one tap)") }
+                if (onSystemDialog != null) OutlinedButton(onClick = onSystemDialog) { Text("System dialog") }
+            }
+        },
+    )
 }

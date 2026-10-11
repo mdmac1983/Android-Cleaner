@@ -34,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.mdmac1983.leancleaner.automation.AccessibilitySetupDialog
+import io.github.mdmac1983.leancleaner.automation.CacheAutomation
+import io.github.mdmac1983.leancleaner.automation.rememberAutomationEnabled
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Permissions
 import io.github.mdmac1983.leancleaner.core.Volumes
@@ -57,6 +60,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val threshold by prefs.largeFileThreshold.collectAsStateWithLifecycle()
     val freed by prefs.totalFreed.collectAsStateWithLifecycle()
     var addExclusion by rememberSaveable { mutableStateOf(false) }
+    var automationSetup by rememberSaveable { mutableStateOf(false) }
+    if (automationSetup) AccessibilitySetupDialog(onDismiss = { automationSetup = false })
 
     ToolScaffold(title = "Settings", onBack = onBack) { padding ->
         LazyColumn(contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp)) {
@@ -82,6 +87,30 @@ fun SettingsScreen(onBack: () -> Unit) {
                     granted = usage,
                     onGrant = {
                         context.startActivitySafely(Permissions.usageAccessIntent(context), Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    },
+                )
+            }
+
+            item {
+                val automation = rememberAutomationEnabled()
+                ListItem(
+                    headlineContent = { Text("One-tap cache cleaning") },
+                    supportingContent = { Text("Accessibility service that presses \"Clear cache\" in Settings for you") },
+                    leadingContent = {
+                        Icon(
+                            if (automation) AppIcons.CheckCircle else AppIcons.Info,
+                            null,
+                            tint = if (automation) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    trailingContent = {
+                        if (automation) {
+                            TextButton(onClick = {
+                                context.startActivitySafely(CacheAutomation.settingsIntent(context), CacheAutomation.fallbackSettingsIntent())
+                            }) { Text("Manage") }
+                        } else {
+                            FilledTonalButton(onClick = { automationSetup = true }) { Text("Set up") }
+                        }
                     },
                 )
             }

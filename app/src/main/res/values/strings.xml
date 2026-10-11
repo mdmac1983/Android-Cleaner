@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lean Cleaner</string>
+    <string name="accessibility_service_label">Lean Cleaner: clear app caches</string>
+    <string name="accessibility_service_description">Lets Lean Cleaner clear the cache of all your apps with one tap. When you start a cleaning run, it opens each app\'s Storage page in Settings and presses \"Clear cache\" for you. It is only active during a run you start, only acts on the Settings app, never touches app data or anything else, and nothing leaves your phone (the app has no internet access).</string>
+    <string name="automation_overlay_title">Clearing app caches</string>
+    <string name="automation_overlay_hint">Lean Cleaner is pressing \"Clear cache\" in Settings for you. Please don\'t touch the screen.</string>
+    <string name="automation_overlay_starting">Starting…</string>
+    <string name="automation_overlay_progress">Clearing cache %1$d of %2$d · %3$s</string>
+    <string name="automation_overlay_stopping">Stopping after this app…</string>
+    <string name="automation_overlay_stop">Stop</string>
 </resources>

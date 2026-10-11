@@ -3,11 +3,13 @@ package io.github.mdmac1983.leancleaner.apps
 import android.app.usage.StorageStatsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
+import io.github.mdmac1983.leancleaner.automation.CleanTarget
 import io.github.mdmac1983.leancleaner.core.Permissions
 import io.github.mdmac1983.leancleaner.junk.ApkInfo
 import io.github.mdmac1983.leancleaner.junk.ApkInspector
@@ -106,6 +108,57 @@ class AppRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Apps whose cache is worth clearing, largest first. Without usage access sizes are unknown, so
+     * every app with a launcher icon is included instead. This app itself is never included.
+     */
+    fun cacheCleanTargets(minCacheBytes: Long = 50_000): List<CleanTarget> {
+        val own = context.packageName
+        if (Permissions.hasUsageAccess(context)) {
+            val storage = context.getSystemService(StorageStatsManager::class.java)
+            val user = Process.myUserHandle()
+            return installedPackages(0).mapNotNull { info ->
+                val ai = info.applicationInfo ?: return@mapNotNull null
+                if (info.packageName == own) return@mapNotNull null
+                val cache = runCatching { storage.queryStatsForPackage(ai.storageUuid, info.packageName, user).cacheBytes }
+                    .getOrNull() ?: return@mapNotNull null
+                if (cache < minCacheBytes) return@mapNotNull null
+                CleanTarget(info.packageName, ai.loadLabel(pm).toString(), cache)
+            }.sortedByDescending { it.cacheBytes }
+        }
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val activities = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(launcher, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(launcher, 0)
+        }
+        return activities.map { it.activityInfo.applicationInfo }
+            .distinctBy { it.packageName }
+            .filter { it.packageName != own }
+            .map { CleanTarget(it.packageName, it.loadLabel(pm).toString()) }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    /** Clean targets for specific packages (e.g. a selection in the app list). */
+    fun cacheCleanTargets(packages: Collection<String>): List<CleanTarget> {
+        val sizes = if (Permissions.hasUsageAccess(context)) cacheSizes(packages) else emptyMap()
+        return packages.filter { it != context.packageName }.mapNotNull { pkg ->
+            val ai = applicationInfo(pkg) ?: return@mapNotNull null
+            CleanTarget(pkg, ai.loadLabel(pm).toString(), sizes[pkg])
+        }
+    }
+
+    /** Current cache size per package (needs usage access; packages that can't be measured are omitted). */
+    fun cacheSizes(packages: Collection<String>): Map<String, Long> {
+        val storage = context.getSystemService(StorageStatsManager::class.java)
+        val user = Process.myUserHandle()
+        return packages.mapNotNull { pkg ->
+            val ai = applicationInfo(pkg) ?: return@mapNotNull null
+            runCatching { storage.queryStatsForPackage(ai.storageUuid, pkg, user).cacheBytes }.getOrNull()?.let { pkg to it }
+        }.toMap()
+    }
+
     private fun lastUsedTimes(): Map<String, Long> {
         val usm = context.getSystemService(UsageStatsManager::class.java)
         val now = System.currentTimeMillis()
@@ -115,6 +168,15 @@ class AppRepository(private val context: Context) {
                 .filterValues { it > 0 }
         }.getOrDefault(emptyMap())
     }
+
+    private fun applicationInfo(pkg: String): ApplicationInfo? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getApplicationInfo(pkg, 0)
+        }
+    }.getOrNull()
 
     private fun installedPackages(flags: Long): List<PackageInfo> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
