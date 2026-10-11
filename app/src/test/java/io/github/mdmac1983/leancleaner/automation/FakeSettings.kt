@@ -25,6 +25,12 @@ data class Variant(
     /** Large-screen layout with the top-level Settings list (incl. device "Storage") next to App info. */
     val twoPane: Boolean = false,
     val openSucceeds: Boolean = true,
+    /** Something else (e.g. an incoming call) covers Settings right after it is opened. */
+    val foreignAfterOpen: Boolean = false,
+    /** Polls during which a separate Settings homepage window (two-pane trampoline) is active after opening. */
+    val homepagePolls: Int = 0,
+    /** Clearing works but the button never turns disabled (completion can't be observed). */
+    val buttonStaysEnabled: Boolean = false,
 ) {
     enum class Expressive {
         NONE,
@@ -58,6 +64,8 @@ class FakeSettings(
     private var screen: Screen = Home(nextWindow++)
     private var stale: Screen? = null
     private var staleLeft = 0
+    private var homepageLeft = 0
+    private val homepageWindow = nextWindow++
 
     fun cacheOf(pkg: String): Long = cache.getValue(pkg)
 
@@ -65,19 +73,34 @@ class FakeSettings(
         if (!v.openSucceeds) return false
         stale = screen
         staleLeft = v.staleRootPolls
+        homepageLeft = v.homepagePolls
         screen = AppInfo(packageName, nextWindow++)
         return true
     }
 
-    override fun root(): UiNode = build(if (staleLeft > 0) stale!! else screen)
+    override fun root(): UiNode? {
+        if (v.foreignAfterOpen && screen !is Home) return null
+        if (homepageLeft > 0) return homepage()
+        return build(if (staleLeft > 0) stale!! else screen)
+    }
 
     override suspend fun awaitUiChange(maxWaitMs: Long) {
         clock += maxWaitMs
         if (staleLeft > 0) staleLeft--
+        if (homepageLeft > 0) homepageLeft--
         (screen as? Storage)?.let { if (it.computingLeft > 0) it.computingLeft-- }
     }
 
     override fun now(): Long = clock
+
+    /** Settings homepage in its own window, with the device-wide Storage item. */
+    private fun homepage(): FakeNode = FakeNode(
+        homepageWindow,
+        children = listOf(FakeNode(homepageWindow, text = "Settings"), FakeNode(homepageWindow, text = "Search settings")) +
+            listOf("Network & internet", "Storage", "Apps").map { title ->
+                row(homepageWindow, title) { if (title == "Storage") clicks += "DEVICE STORAGE" }
+            },
+    )
 
     private fun build(s: Screen): UiNode = when (s) {
         is Home -> FakeNode(s.windowId, text = "Settings")
@@ -130,7 +153,7 @@ class FakeSettings(
     }
 
     private fun storage(s: Storage): FakeNode {
-        val cacheEnabled = cache.getValue(s.pkg) > 0 && s.computingLeft == 0 && !v.locked
+        val cacheEnabled = (cache.getValue(s.pkg) > 0 || v.buttonStaysEnabled) && s.computingLeft == 0 && !v.locked
         val buttons = buildList {
             add(button(s.windowId, v.clearStorageLabel, enabled = s.computingLeft == 0) {
                 clicks += v.clearStorageLabel

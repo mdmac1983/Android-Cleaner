@@ -64,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mdmac1983.leancleaner.automation.AccessibilitySetupDialog
 import io.github.mdmac1983.leancleaner.automation.CacheCleaner
+import io.github.mdmac1983.leancleaner.automation.CacheRunProgress
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Permissions
 import io.github.mdmac1983.leancleaner.core.startActivitySafely
@@ -205,6 +206,7 @@ fun AppsScreen(onBack: () -> Unit, vm: AppsViewModel = viewModel()) {
                 )
             }
             FilterRow(vm, usageAccess)
+            CacheRunProgress(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             LazyColumn(contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 16.dp)) {
                 if (!usageAccess) {

@@ -32,14 +32,20 @@ data class SettingsLabels(
 data class FlowTiming(
     val pageTimeoutMs: Long = 8_000,
     val freshWindowTimeoutMs: Long = 3_000,
-    val appPageTimeoutMs: Long = 3_000,
+    // Longer than foregroundLostMs, so "something else is on screen" is detected before "not the app page".
+    val appPageTimeoutMs: Long = 6_000,
     val scrollAfterMs: Long = 700,
     val maxScrolls: Int = 10,
     /** Settings shows the button disabled until it has calculated the app's sizes. */
     val buttonSettleMs: Long = 3_000,
     val confirmTimeoutMs: Long = 2_500,
     val pollMs: Long = 150,
+    /** Settings not in the foreground for this long means something else took over (e.g. a call). */
+    val foregroundLostMs: Long = 5_000,
 )
+
+/** Why a run ended early. */
+enum class StopReason { USER, SCREEN_OFF, PHONE_CALL, LEFT_SETTINGS }
 
 /** An app to clear; [cacheBytes] (when known) tells "already empty" apart from "can't be cleared". */
 data class CleanTarget(val packageName: String, val label: String, val cacheBytes: Long? = null)
@@ -47,10 +53,18 @@ data class CleanTarget(val packageName: String, val label: String, val cacheByte
 sealed interface ClearOutcome {
     data object Cleared : ClearOutcome
     data object AlreadyEmpty : ClearOutcome
+
+    /** "Clear cache" was pressed, but Settings never confirmed it (the button stayed enabled). */
+    data object Unconfirmed : ClearOutcome
     data class Failed(val reason: Reason) : ClearOutcome
+
+    /** Stopped mid-app; nothing more is clicked. */
+    data class Interrupted(val reason: StopReason) : ClearOutcome
 
     enum class Reason {
         OPEN_FAILED,
+        /** The opened page never showed the app's name or package, so nothing was clicked. */
+        APP_PAGE_NOT_FOUND,
         STORAGE_ENTRY_NOT_FOUND,
         CLEAR_BUTTON_NOT_FOUND,
         /** The button stays disabled although the app has cache (e.g. system modules, admin policy). */
@@ -70,9 +84,20 @@ class CacheClearFlow(
     private val driver: SettingsDriver,
     private val labels: SettingsLabels,
     private val timing: FlowTiming = FlowTiming(),
+    /** Checked on every poll, so a stop, a locked screen or a phone call ends the current app at once. */
+    private val interruption: () -> StopReason? = { null },
 ) {
 
-    suspend fun clear(target: CleanTarget): ClearOutcome {
+    private class Interrupted(val reason: StopReason) : Exception()
+
+    suspend fun clear(target: CleanTarget): ClearOutcome = try {
+        clearOrThrow(target)
+    } catch (e: Interrupted) {
+        ClearOutcome.Interrupted(e.reason)
+    }
+
+    private suspend fun clearOrThrow(target: CleanTarget): ClearOutcome {
+        interruption()?.let { return ClearOutcome.Interrupted(it) }
         val previousWindow = driver.root()?.windowId
         if (!driver.openAppDetails(target.packageName)) return ClearOutcome.Failed(ClearOutcome.Reason.OPEN_FAILED)
 
@@ -80,12 +105,14 @@ class CacheClearFlow(
         if (previousWindow != null) {
             waitFor(timing.freshWindowTimeoutMs) { root -> root.takeIf { it.windowId != previousWindow } }
         }
-        // App info shows the app's name in its header; waiting for it guards against stale content.
-        waitFor(timing.appPageTimeoutMs) { root ->
-            root.takeIf { NodeFinder.containsText(it, listOf(target.label, target.packageName)) }
-        }
+        // Only act on a page that shows this app's name (or package): App info has it in its header.
+        // That also keeps a two-pane Settings homepage (with the device-wide "Storage" item) out of play.
+        val appWindow = waitFor(timing.appPageTimeoutMs) { root -> root.takeIf { isAppPage(it, target) }?.windowId }
+            ?: return ClearOutcome.Failed(ClearOutcome.Reason.APP_PAGE_NOT_FOUND)
 
+        // Scrolling can move the header out of the tree, so the verified window id is what counts.
         val entry = waitFor(timing.pageTimeoutMs, scroll = true) { root ->
+            if (root.windowId != appWindow && !isAppPage(root, target)) return@waitFor null
             NodeFinder.findByLabel(root, labels.storageEntry)?.let(NodeFinder::clickTarget)
         } ?: return ClearOutcome.Failed(ClearOutcome.Reason.STORAGE_ENTRY_NOT_FOUND)
         if (isDangerous(entry)) return ClearOutcome.Failed(ClearOutcome.Reason.UNSAFE_TARGET)
@@ -107,9 +134,13 @@ class CacheClearFlow(
         val storageWindow = driver.root()?.windowId
         if (!button.click()) return ClearOutcome.Failed(ClearOutcome.Reason.CLICK_FAILED)
 
-        confirmIfAsked(storageWindow)
-        return ClearOutcome.Cleared
+        return if (confirmIfAsked(storageWindow)) ClearOutcome.Cleared else ClearOutcome.Unconfirmed
     }
+
+    /** Exact app name on some node (e.g. "Settings" must not match "Search settings"), or the package name. */
+    private fun isAppPage(root: UiNode, target: CleanTarget): Boolean =
+        NodeFinder.findByLabel(root, listOf(target.label)) != null ||
+            NodeFinder.containsText(root, listOf(target.packageName))
 
     /** The "Clear cache" label and what to click for it. Disabled buttons may not report as clickable. */
     private class ClearButton(val label: UiNode, val target: UiNode?) {
@@ -130,9 +161,10 @@ class CacheClearFlow(
      * the page's own button nor a "Delete app data?" dialog can ever be confirmed. Stock Android shows
      * no dialog and just disables the button once the cache is gone, which ends the wait early.
      */
-    private suspend fun confirmIfAsked(storageWindow: Int?) {
+    /** @return true once Settings shows the cache as cleared (the button turned disabled). */
+    private suspend fun confirmIfAsked(storageWindow: Int?): Boolean {
         var confirmed = false
-        waitFor(timing.confirmTimeoutMs) { root ->
+        return waitFor(timing.confirmTimeoutMs) { root ->
             if (root.windowId != storageWindow) {
                 if (!confirmed && NodeFinder.containsText(root, labels.clearCache)) {
                     NodeFinder.findByLabel(root, labels.confirm)
@@ -145,17 +177,23 @@ class CacheClearFlow(
                 // Back on (or still on) the storage page: done once the button is disabled.
                 findClearButtonNow()?.takeIf { !it.usable }
             }
-        }
+        } != null
     }
 
     private suspend fun <T : Any> waitFor(timeoutMs: Long, scroll: Boolean = false, find: (UiNode) -> T?): T? {
         val start = driver.now()
         var lastScroll = start
         var scrolls = 0
+        var awaySince: Long? = null
         while (driver.now() - start < timeoutMs) {
             currentCoroutineContext().ensureActive()
+            interruption()?.let { throw Interrupted(it) }
             val root = driver.root()
-            if (root != null) {
+            if (root == null) {
+                val since = awaySince ?: driver.now().also { awaySince = it }
+                if (driver.now() - since >= timing.foregroundLostMs) throw Interrupted(StopReason.LEFT_SETTINGS)
+            } else {
+                awaySince = null
                 find(root)?.let { return it }
                 if (scroll && scrolls < timing.maxScrolls && driver.now() - lastScroll >= timing.scrollAfterMs) {
                     if (NodeFinder.findScrollable(root)?.scrollForward() == true) scrolls++
@@ -171,46 +209,57 @@ class CacheClearFlow(
 data class RunResult(
     val cleared: List<String>,
     val alreadyEmpty: List<String>,
+    /** "Clear cache" pressed but not confirmed by Settings. */
+    val unconfirmed: List<String>,
     val failed: List<Pair<String, ClearOutcome.Reason>>,
-    val cancelled: Boolean,
+    /** Why the run ended early, or null if it went through the whole list. */
+    val stoppedBy: StopReason?,
     /** True when the run stopped because this device's Settings layout isn't recognized. */
     val unsupported: Boolean,
-)
+) {
+    val cancelled: Boolean get() = stoppedBy != null
+}
 
 /**
  * Runs [CacheClearFlow] over many apps, giving up early if the Settings layout isn't recognized.
- * A user stop ([shouldStop]) is honoured between apps so the results so far are kept.
+ * A stop ([shouldStop], or an interruption detected by the flow) keeps the results so far.
  */
 class CacheCleanRun(private val flow: CacheClearFlow, private val giveUpAfterFailures: Int = 3) {
 
     suspend fun run(
         targets: List<CleanTarget>,
-        shouldStop: () -> Boolean = { false },
+        shouldStop: () -> StopReason? = { null },
         onProgress: (index: Int, target: CleanTarget) -> Unit = { _, _ -> },
     ): RunResult {
         val cleared = ArrayList<String>()
         val empty = ArrayList<String>()
+        val unconfirmed = ArrayList<String>()
         val failed = ArrayList<Pair<String, ClearOutcome.Reason>>()
         var unsupported = false
-        var cancelled = false
+        var stoppedBy: StopReason? = null
         for ((index, target) in targets.withIndex()) {
             currentCoroutineContext().ensureActive()
-            if (shouldStop()) {
-                cancelled = true
+            shouldStop()?.let {
+                stoppedBy = it
                 break
             }
             onProgress(index, target)
             when (val outcome = flow.clear(target)) {
                 ClearOutcome.Cleared -> cleared += target.packageName
                 ClearOutcome.AlreadyEmpty -> empty += target.packageName
+                ClearOutcome.Unconfirmed -> unconfirmed += target.packageName
                 is ClearOutcome.Failed -> failed += target.packageName to outcome.reason
+                is ClearOutcome.Interrupted -> {
+                    stoppedBy = outcome.reason
+                    break
+                }
             }
             // Nothing worked for the first few apps: the screens don't look like what we expect.
-            if (cleared.isEmpty() && empty.isEmpty() && failed.size >= giveUpAfterFailures) {
+            if (cleared.isEmpty() && empty.isEmpty() && unconfirmed.isEmpty() && failed.size >= giveUpAfterFailures) {
                 unsupported = true
                 break
             }
         }
-        return RunResult(cleared, empty, failed, cancelled = cancelled, unsupported = unsupported)
+        return RunResult(cleared, empty, unconfirmed, failed, stoppedBy, unsupported)
     }
 }

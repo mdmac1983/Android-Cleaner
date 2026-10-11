@@ -10,6 +10,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
@@ -67,58 +68,75 @@ class CacheCleanerService : AccessibilityService(), SettingsDriver {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        // Cancelling the run lets its finally block publish the final state.
         scope.cancel()
         removeOverlay()
-        if (CacheAutomation.state.value is CacheAutomation.State.Running) {
-            CacheAutomation.state.value = CacheAutomation.State.Idle
-        }
         super.onDestroy()
     }
 
     /** Starts a run unless one is already going. */
-    fun start(targets: List<CleanTarget>): Boolean {
-        if (job?.isActive == true || targets.isEmpty()) return false
+    fun start(requested: List<CleanTarget>): Boolean {
+        if (job?.isActive == true) return false
+        settingsPackages = SettingsLabelResolver.settingsPackages(this)
+        // Settings itself is what we drive; clearing its cache mid-run makes no sense.
+        val targets = requested.filterNot { it.packageName in settingsPackages }
+        if (targets.isEmpty()) return false
         stopRequested = false
         CacheAutomation.state.value = CacheAutomation.State.Running(0, targets.size, targets.first().label)
         job = scope.launch {
-            listen(true)
-            showOverlay()
+            var result: RunResult? = null
             var error: String? = null
-            val result = try {
-                withContext(Dispatchers.Default) {
-                    settingsPackages = SettingsLabelResolver.settingsPackages(this@CacheCleanerService)
+            try {
+                listen(true)
+                showOverlay()
+                result = withContext(Dispatchers.Default) {
                     val labels = SettingsLabelResolver.resolve(this@CacheCleanerService, settingsPackages)
-                    CacheCleanRun(CacheClearFlow(this@CacheCleanerService, labels))
-                        .run(targets, shouldStop = { stopRequested || !screenUsable() }) { index, target ->
-                            CacheAutomation.state.value = CacheAutomation.State.Running(index, targets.size, target.label)
-                            scope.launch { overlayText?.text = progressText(index, targets.size, target.label) }
-                        }
+                    val flow = CacheClearFlow(this@CacheCleanerService, labels, interruption = ::interruption)
+                    CacheCleanRun(flow).run(targets, shouldStop = ::interruption) { index, target ->
+                        CacheAutomation.state.value = CacheAutomation.State.Running(index, targets.size, target.label)
+                        scope.launch { overlayText?.text = progressText(index, targets.size, target.label) }
+                    }
                 }
             } catch (e: CancellationException) {
+                error = "the accessibility service was switched off"
                 throw e
             } catch (e: Exception) {
                 // Accessibility calls can throw if Settings goes away mid-run; never crash the app over it.
                 error = e.message ?: e.javaClass.simpleName
-                null
             } finally {
                 listen(false)
                 removeOverlay()
+                // Always end in a terminal state (even when cancelled), so later runs aren't refused as busy.
+                CacheAutomation.state.value = CacheAutomation.State.Finished(result, targets.size, error)
             }
-            CacheAutomation.state.value = CacheAutomation.State.Finished(result, targets.size, error)
-            returnToApp()
+            // Don't jump over a phone call or the lock screen; only come back after a normal end or a user stop.
+            val stoppedBy = result?.stoppedBy
+            if (stoppedBy == null || stoppedBy == StopReason.USER) returnToApp()
         }
         return true
     }
 
+    /** Takes effect within one poll; the overlay goes away at once so the screen is usable immediately. */
     fun stop() {
         stopRequested = true
-        overlayText?.setText(R.string.automation_overlay_stopping)
+        removeOverlay()
     }
 
-    /** Settings can't be driven while the screen is off or locked; the run stops instead of failing app by app. */
+    /** Checked on every poll: a stop, a locked/off screen or a call ends the run immediately. */
+    private fun interruption(): StopReason? = when {
+        stopRequested -> StopReason.USER
+        !screenUsable() -> StopReason.SCREEN_OFF
+        phoneBusy() -> StopReason.PHONE_CALL
+        else -> null
+    }
+
+    /** Settings can't be driven while the screen is off or locked. */
     private fun screenUsable(): Boolean =
         getSystemService(PowerManager::class.java).isInteractive &&
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
+
+    /** Ringing, in a call or in a VoIP call; needs no phone permission. */
+    private fun phoneBusy(): Boolean = getSystemService(AudioManager::class.java).mode != AudioManager.MODE_NORMAL
 
     // region SettingsDriver
 

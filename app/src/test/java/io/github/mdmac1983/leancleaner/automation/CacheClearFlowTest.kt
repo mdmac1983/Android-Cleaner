@@ -123,6 +123,46 @@ class CacheClearFlowTest {
     }
 
     @Test
+    fun `a separate two-pane homepage window is never acted on`() {
+        val settings = FakeSettings(apps, Variant(homepagePolls = 6))
+
+        assertEquals(ClearOutcome.Cleared, clear(settings, "com.a"))
+
+        assertFalse("DEVICE STORAGE" in settings.clicks)
+        assertEquals(listOf("Storage & cache", "Clear cache"), settings.clicks)
+    }
+
+    @Test
+    fun `nothing is clicked unless the page shows the app`() {
+        val settings = FakeSettings(apps)
+
+        val outcome = runBlocking { CacheClearFlow(settings, english).clear(CleanTarget("com.a", "Some other app", 5_000)) }
+
+        assertEquals(ClearOutcome.Failed(Reason.APP_PAGE_NOT_FOUND), outcome)
+        assertTrue(settings.clicks.isEmpty())
+    }
+
+    @Test
+    fun `the package name is accepted when the label differs`() {
+        val settings = FakeSettings(mapOf("com.a" to ("com.a" to 5_000L)))
+
+        val outcome = runBlocking { CacheClearFlow(settings, english).clear(CleanTarget("com.a", "Renamed", 5_000)) }
+
+        assertEquals(ClearOutcome.Cleared, outcome)
+    }
+
+    @Test
+    fun `clearing that Settings never confirms is reported as unconfirmed`() {
+        val settings = FakeSettings(apps, Variant(buttonStaysEnabled = true))
+
+        val result = runBlocking { CacheCleanRun(CacheClearFlow(settings, english)).run(listOf(target("com.a"))) }
+
+        assertEquals(listOf("com.a"), result.unconfirmed)
+        assertTrue(result.cleared.isEmpty())
+        assertFalse(result.unsupported)
+    }
+
+    @Test
     fun `Android 8-9 style storage entry`() {
         val settings = FakeSettings(apps, Variant(storageEntryLabel = "Storage", clearStorageLabel = "Clear data"))
 
@@ -243,18 +283,44 @@ class CacheClearFlowTest {
     @Test
     fun `a user stop keeps the results so far`() {
         val settings = FakeSettings(apps)
-        var stop = false
+        var stop: StopReason? = null
 
         val result = runBlocking {
             CacheCleanRun(CacheClearFlow(settings, english)).run(apps.keys.map(::target), shouldStop = { stop }) { i, _ ->
-                if (i == 1) stop = true
+                if (i == 1) stop = StopReason.USER
             }
         }
 
-        assertTrue(result.cancelled)
+        assertEquals(StopReason.USER, result.stoppedBy)
         assertEquals(listOf("com.a"), result.cleared)
         assertEquals(listOf("com.b"), result.alreadyEmpty)
         assertEquals(9_000L, settings.cacheOf("com.c"))
+    }
+
+    @Test
+    fun `an interruption mid-app stops at once without further clicks`() {
+        val settings = FakeSettings(apps)
+        var call: StopReason? = null
+        // The phone starts ringing right after the storage entry was pressed.
+        val flow = CacheClearFlow(settings, english, interruption = { call.also { if (settings.clicks.isNotEmpty()) call = StopReason.PHONE_CALL } })
+
+        val result = runBlocking { CacheCleanRun(flow).run(apps.keys.map(::target), shouldStop = { call }) }
+
+        assertEquals(StopReason.PHONE_CALL, result.stoppedBy)
+        assertEquals(listOf("Storage & cache"), settings.clicks)
+        assertEquals(5_000L, settings.cacheOf("com.a"))
+        assertTrue(result.cleared.isEmpty())
+    }
+
+    @Test
+    fun `losing the foreground to another app stops the run`() {
+        val settings = FakeSettings(apps, Variant(foreignAfterOpen = true))
+
+        val result = runBlocking { CacheCleanRun(CacheClearFlow(settings, english)).run(apps.keys.map(::target)) }
+
+        assertEquals(StopReason.LEFT_SETTINGS, result.stoppedBy)
+        assertTrue(settings.clicks.isEmpty())
+        assertFalse(result.unsupported)
     }
 
     @Test

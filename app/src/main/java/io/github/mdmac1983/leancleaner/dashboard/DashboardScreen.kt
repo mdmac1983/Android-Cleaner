@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.mdmac1983.leancleaner.Route
+import io.github.mdmac1983.leancleaner.automation.CacheCleaner
 import io.github.mdmac1983.leancleaner.core.Format
 import io.github.mdmac1983.leancleaner.core.Volume
 import io.github.mdmac1983.leancleaner.core.Volumes
@@ -46,6 +48,7 @@ import io.github.mdmac1983.leancleaner.monitor.BatterySnapshot
 import io.github.mdmac1983.leancleaner.monitor.MemorySnapshot
 import io.github.mdmac1983.leancleaner.monitor.SystemInfo
 import io.github.mdmac1983.leancleaner.prefs
+import io.github.mdmac1983.leancleaner.ui.components.rememberMessageSnackbar
 import io.github.mdmac1983.leancleaner.ui.components.rememberPolled
 import io.github.mdmac1983.leancleaner.ui.icons.AppIcons
 
@@ -67,11 +70,13 @@ private class Overview(val volumes: List<Volume>, val memory: MemorySnapshot, va
 fun DashboardScreen(onOpen: (Route) -> Unit, onQuickClean: () -> Unit) {
     val context = LocalContext.current
     val freed by context.prefs.totalFreed.collectAsStateWithLifecycle()
+    val snackbar = rememberMessageSnackbar(CacheCleaner.messages)
     val overview by rememberPolled(3_000) {
         Overview(Volumes.list(context), SystemInfo.memory(context), SystemInfo.battery(context))
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Lean Cleaner") },

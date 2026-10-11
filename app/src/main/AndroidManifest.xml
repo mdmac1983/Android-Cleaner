@@ -42,9 +42,12 @@
         android:theme="@style/Theme.LeanCleaner"
         tools:targetApi="36">
 
+        <!-- singleTask: when opened from Settings ("Free up space") the app still gets its own task,
+             so the cache-cleaning automation (which clears Settings' task) can't close it. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

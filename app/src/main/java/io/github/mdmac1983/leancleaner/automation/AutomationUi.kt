@@ -106,7 +106,17 @@ fun AccessibilitySetupDialog(onDismiss: () -> Unit) {
 @Composable
 fun CacheRunProgress(modifier: Modifier = Modifier) {
     val state by CacheAutomation.state.collectAsStateWithLifecycle()
-    val running = state as? CacheAutomation.State.Running ?: return
+    val preparing by CacheCleaner.preparing.collectAsStateWithLifecycle()
+    val running = state as? CacheAutomation.State.Running
+    if (running == null) {
+        if (preparing) {
+            Column(modifier.fillMaxWidth()) {
+                Text("Finding apps with cache…", style = MaterialTheme.typography.bodyMedium)
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp))
+            }
+        }
+        return
+    }
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

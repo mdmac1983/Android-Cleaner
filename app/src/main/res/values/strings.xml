@@ -7,6 +7,5 @@
     <string name="automation_overlay_hint">Lean Cleaner is pressing \"Clear cache\" in Settings for you. Please don\'t touch the screen.</string>
     <string name="automation_overlay_starting">Starting…</string>
     <string name="automation_overlay_progress">Clearing cache %1$d of %2$d · %3$s</string>
-    <string name="automation_overlay_stopping">Stopping after this app…</string>
     <string name="automation_overlay_stop">Stop</string>
 </resources>

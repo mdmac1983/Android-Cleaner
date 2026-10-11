@@ -30,6 +30,11 @@ object CacheCleaner {
     /** One-off summaries ("Cleared the cache of 42 apps · freed 1.2 GB") for whichever screen is visible. */
     val messages: Flow<String> = _messages.receiveAsFlow()
 
+    private val _preparing = MutableStateFlow(false)
+
+    /** True while targets are being measured, before the run starts (takes a few seconds). */
+    val preparing: StateFlow<Boolean> = _preparing.asStateFlow()
+
     private val _completedRuns = MutableStateFlow(0)
 
     /** Increments after every run, so screens can refresh cache totals. */
@@ -43,20 +48,27 @@ object CacheCleaner {
     /** Clears every app with a meaningful cache. */
     suspend fun cleanAll(context: Context): StartResult {
         val app = context.applicationContext
-        precheck(app)?.let { return it }
-        val targets = withContext(Dispatchers.IO) {
+        return prepare(app) {
             clearOwnCache(app)
             AppRepository(app).cacheCleanTargets()
         }
-        return start(app, targets)
     }
 
     /** Clears the given apps only. */
     suspend fun clean(context: Context, packages: Collection<String>): StartResult {
         val app = context.applicationContext
+        return prepare(app) { AppRepository(app).cacheCleanTargets(packages) }
+    }
+
+    private suspend fun prepare(app: Context, findTargets: () -> List<CleanTarget>): StartResult {
         precheck(app)?.let { return it }
-        val targets = withContext(Dispatchers.IO) { AppRepository(app).cacheCleanTargets(packages) }
-        return start(app, targets)
+        _preparing.value = true
+        try {
+            val targets = withContext(Dispatchers.IO) { findTargets() }
+            return start(app, targets)
+        } finally {
+            _preparing.value = false
+        }
     }
 
     fun message(result: StartResult): String? = when (result) {
@@ -70,12 +82,15 @@ object CacheCleaner {
     private fun precheck(app: Context): StartResult? = when {
         !CacheAutomation.isEnabled(app) -> StartResult.NEEDS_SETUP
         !CacheAutomation.isConnected -> StartResult.NOT_CONNECTED
-        CacheAutomation.state.value is CacheAutomation.State.Running -> StartResult.BUSY
+        _preparing.value || CacheAutomation.state.value is CacheAutomation.State.Running -> StartResult.BUSY
         else -> null
     }
 
     private fun start(app: Context, targets: List<CleanTarget>): StartResult {
-        precheck(app)?.let { return it }
+        // Re-check: the service may have been switched off while targets were being measured.
+        if (!CacheAutomation.isEnabled(app)) return StartResult.NEEDS_SETUP
+        if (!CacheAutomation.isConnected) return StartResult.NOT_CONNECTED
+        if (CacheAutomation.state.value is CacheAutomation.State.Running) return StartResult.BUSY
         if (targets.isEmpty()) return StartResult.NOTHING_TO_CLEAN
         observe(app)
         val known = targets.mapNotNull { it.cacheBytes }
@@ -113,16 +128,23 @@ object CacheCleaner {
     }
 
     private fun summary(state: CacheAutomation.State.Finished, freed: Long?): String {
-        val result = state.result ?: return "Cache cleaning stopped: ${state.error ?: "unknown error"}"
+        val result = state.result ?: return "Cache cleaning stopped: ${state.error ?: "unexpected error"}"
         if (result.unsupported) {
             return "Couldn't find \"Clear cache\" in this phone's Settings, so nothing was changed. " +
                 "Use the system dialog or App info instead."
         }
         return buildString {
+            when (result.stoppedBy) {
+                null, StopReason.USER -> Unit
+                StopReason.SCREEN_OFF -> append("Stopped because the screen turned off. ")
+                StopReason.PHONE_CALL -> append("Stopped for a call. ")
+                StopReason.LEFT_SETTINGS -> append("Stopped because another app took over the screen. ")
+            }
             append("Cleared the cache of ${Format.count(result.cleared.size, "app")}")
             if (freed != null && freed > 0) append(" · freed ${Format.size(freed)}")
+            if (result.unconfirmed.isNotEmpty()) append(" · ${result.unconfirmed.size} not confirmed")
             if (result.failed.isNotEmpty()) append(" · ${result.failed.size} skipped")
-            if (result.cancelled) append(" · stopped early")
+            if (result.stoppedBy == StopReason.USER) append(" · stopped early")
         }
     }
 
